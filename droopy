@@ -113,6 +113,20 @@ def basename(path):
         path = mod.basename(path)
     return path
 
+def published_files(directory):
+    "Returns the list of files that should appear as download links."
+    names = []
+    # In py2, listdir() returns strings when the directory is a string.
+    for name in os.listdir(unicode(directory)):
+        if name.startswith(DroopyFieldStorage.TMPPREFIX):
+            continue
+        npath = os.path.join(directory, name)
+        if os.path.isfile(npath):
+            names.append(name)
+    names.sort(key=lambda s: s.lower())
+    return names
+
+
 def check_auth(method):
     "Wraps methods on the request handler to require simple auth checks."
     def decorated(self, *pargs):
@@ -206,6 +220,7 @@ class HTTPUploadHandler(httpserver.BaseHTTPRequestHandler):
     message = ''
     picture = ''
     publish_files = False
+    allow_traversal = False
     file_mode = None
     protocol_version = 'HTTP/1.0'
     form_field = 'upfile'
@@ -274,7 +289,7 @@ class HTTPUploadHandler(httpserver.BaseHTTPRequestHandler):
         # TODO: Sanity-check for injections
         links = ''
         if self.publish_files:
-            for name in self.published_files():
+            for name in published_files(self.directory):
                 encoded_name = urllibparse.quote(_encode_str_if_py2(name))
                 links += '<a href="/{0}">{1}</a>'.format(encoded_name, name)
             links = '<div id="files">' + links + '</div>'
@@ -301,7 +316,7 @@ class HTTPUploadHandler(httpserver.BaseHTTPRequestHandler):
             # send the picture
             self.send_file(self.picture)
         # TODO Verify that this is path-injection proof
-        elif name in self.published_files():
+        elif name in published_files(self.directory):
             localpath = os.path.join(self.directory, name)
             self.send_file(localpath)
         else:
@@ -421,6 +436,7 @@ def run(hostname='',
         message='',
         file_mode=None,
         publish_files=False,
+        allow_traversal=False,
         auth='',
         certfile=None,
         permitted_ciphers=(
@@ -443,6 +459,7 @@ def run(hostname='',
     HTTPUploadHandler.localisations = localisations
     HTTPUploadHandler.certfile = certfile
     HTTPUploadHandler.publish_files = publish_files
+    HTTPUploadHandler.allow_traversal = allow_traversal
     HTTPUploadHandler.picture = picture
     HTTPUploadHandler.message = message
     HTTPUploadHandler.file_mode = file_mode
@@ -1020,6 +1037,8 @@ def parse_args(cmd=None, ignore_defaults=False):
                         help='set the picture')
     parser.add_argument('--publish-files', '--dl', action='store_true', default=False,
                         help='provide download links')
+    parser.add_argument('-t', '--allow-traversal', action='store_true', default=False,
+                        help='Allow users to see and push to arbitrary directories')
     parser.add_argument('-a', '--auth', type=str, default='',
                         help='set the authentication credentials, in form USER:PASS')
     parser.add_argument('--ssl', type=str, default='',
@@ -1104,6 +1123,7 @@ def main():
             directory=args['directory'],
             file_mode=args['chmod'],
             publish_files=args['publish_files'],
+            allow_traversal=args['allow_traversal'],
             auth=args['auth'],
             templates=default_templates,
             localisations=default_localisations)
